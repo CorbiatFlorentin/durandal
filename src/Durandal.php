@@ -11,8 +11,6 @@ final class Durandal
 {
     public const VERSION = '0.1.0-dev';
 
-    private function __construct() {}
-
     public static function version(): string
     {
         return self::VERSION;
