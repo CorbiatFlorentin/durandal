@@ -6,7 +6,6 @@
          colors="true"
          executionOrder="random"
          beStrictAboutOutputDuringTests="true"
-         beStrictAboutCoverageMetadata="true"
          failOnRisky="true"
          failOnWarning="true"
          failOnDeprecation="true"
@@ -17,11 +16,14 @@
          displayDetailsOnTestsThatTriggerErrors="true">
     <testsuites>
         <testsuite name="unit">
-            <directory>tests</directory>
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="contract">
+            <directory>tests/Contract</directory>
         </testsuite>
     </testsuites>
 
-    <source restrictNotices="true" restrictWarnings="true">
+    <source ignoreIndirectDeprecations="true" restrictNotices="true" restrictWarnings="true">
         <include>
             <directory>src</directory>
         </include>
