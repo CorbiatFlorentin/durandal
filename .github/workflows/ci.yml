@@ -60,7 +60,10 @@ jobs:
       - name: Fixer la version de Symfony
         run: |
           if [ "${{ matrix.symfony }}" = "8" ]; then constraint="^8.0"; else constraint="~${{ matrix.symfony }}.0"; fi
-          composer require --dev --no-update "symfony/http-client:${constraint}"
+          composer require --dev --no-update \
+            "symfony/http-client:${constraint}" \
+            "symfony/framework-bundle:${constraint}" \
+            "symfony/yaml:${constraint}"
 
       - uses: ramsey/composer-install@v4
         with:

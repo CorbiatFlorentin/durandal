@@ -1,0 +1,5 @@
+durandal:
+    clients:
+        missing.client:
+            rules:
+                - { fault: timeout }

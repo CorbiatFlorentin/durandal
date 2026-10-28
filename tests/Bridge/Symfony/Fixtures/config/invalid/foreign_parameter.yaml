@@ -1,0 +1,5 @@
+durandal:
+    clients:
+        packagist.client:
+            rules:
+                - { fault: timeout, status: 504 }

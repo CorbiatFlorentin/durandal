@@ -9,7 +9,7 @@ Bibliothèque PHP de **tests de résilience** : elle simule des pannes réseau (
 - Cœur indépendant du framework (PSR-18, PSR-20), intégration Symfony, PHPUnit et Pest
 - Tests déterministes (graine fixe) et rapides (horloge virtuelle, aucune vraie attente)
 
-> 🚧 En développement (phase 1 : pannes, règles et décorateur PSR-18) — voir le [plan](docs/PLAN.md).
+> 🚧 En développement (phase 2 : adaptateur Symfony HttpClient et bundle) — voir le [plan](docs/PLAN.md).
 
 ## Utilisation (PSR-18)
 
@@ -33,6 +33,38 @@ Pannes disponibles : `Latency`, `HttpError` (avec `Retry-After`), `Timeout`, `Co
 Les latences des règles déclenchées s'additionnent ; ensuite, la première autre panne déclenchée l'emporte.
 Chaque règle probabiliste qui vise une requête consomme un tirage (même après une panne gagnante) ; une règle qui ne la vise pas n'en consomme aucun. Chaque `with…()` renvoie un nouveau client dont la séquence repart de la graine.
 Les délais dépassés et refus de connexion sont levés comme des `Psr\Http\Client\NetworkExceptionInterface`.
+
+## Utilisation (Symfony HttpClient)
+
+```php
+$client = Durandal::wrapSymfony($httpClient)    // tout HttpClientInterface, streaming asynchrone compris
+    ->withSeed(42)
+    ->failRate(0.3, status: 503);
+```
+
+Mêmes règles et mêmes pannes qu'en PSR-18. Les délais dépassés et refus de connexion sont levés comme des `TransportExceptionInterface`, dont la cause (`getPrevious()`) est un `Durandal\Adapter\Symfony\SimulatedTimeout` ou `SimulatedConnectionRefused`.
+
+### Bundle : activer Durandal par configuration
+
+```php
+// config/bundles.php — uniquement en test : le bundle refuse de démarrer en prod
+Durandal\Bridge\Symfony\DurandalBundle::class => ['test' => true],
+```
+
+```yaml
+# config/packages/test/durandal.yaml
+durandal:
+    seed: 42                         # facultatif : tirée au hasard si absente
+    clients:
+        packagist.client:            # http_client, un client de scoped_clients ou tout service HttpClient
+            rules:
+                - { match: { host: 'repo.packagist.org' }, fault: http_error, status: 503, probability: 0.3 }
+                - { match: { method: POST, headers: { Idempotency-Key: ~ } }, fault: timeout }
+                - { fault: latency, ms: 800 }
+```
+
+Pannes : `latency` (`ms`), `http_error` (`status`, `retry_after`), `timeout`, `connection_refused`, `truncated_body` (`keep_ratio`), `malformed_body` (`body`). Filtres de `match` : `method`, `host`, `path` (joker `*`), `headers` (`~` : présence seule).
+Pour les clients de FrameworkBundle, Durandal se place juste au-dessus du transport : il voit les URL absolues, et les réessais de `retry_failed` portent sur les pannes simulées. Une configuration invalide est signalée dès la compilation du conteneur, avec le client et la règle en cause.
 
 ## Développement
 

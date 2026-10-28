@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Durandal\Adapter\Psr18;
 
+use Durandal\Adapter\FaultShortcuts;
 use Durandal\Clock\NullSleeper;
 use Durandal\Clock\Sleeper;
 use Durandal\Engine\FaultEngine;
@@ -16,8 +17,6 @@ use Durandal\Fault\Timeout;
 use Durandal\Fault\TruncatedBody;
 use Durandal\Http\RequestInfo;
 use Durandal\Random\SeededRandomizer;
-use Durandal\Rule\Probability;
-use Durandal\Rule\RequestMatcher;
 use Durandal\Rule\Rule;
 use LogicException;
 use Psr\Http\Client\ClientInterface;
@@ -34,6 +33,8 @@ use Psr\Http\Message\StreamFactoryInterface;
  */
 final class DurandalClient implements ClientInterface
 {
+    use FaultShortcuts;
+
     private const SUPPORTED_FAULTS = [
         Latency::class,
         HttpError::class,
@@ -93,22 +94,6 @@ final class DurandalClient implements ClientInterface
     public function withSleeper(Sleeper $sleeper): self
     {
         return new self($this->inner, $this->responseFactory, $this->streamFactory, $this->seed, $this->rules, $sleeper);
-    }
-
-    /**
-     * Raccourci : ajoute une latence fixe aux requêtes visées.
-     */
-    public function latency(int $milliseconds, ?RequestMatcher $match = null): self
-    {
-        return $this->withRule(new Rule(new Latency($milliseconds), $match));
-    }
-
-    /**
-     * Raccourci : fait échouer une part des requêtes visées avec un statut HTTP.
-     */
-    public function failRate(Probability|float $probability, int $status = 503, ?RequestMatcher $match = null): self
-    {
-        return $this->withRule(new Rule(new HttpError($status), $match, $probability));
     }
 
     public function sendRequest(RequestInterface $request): ResponseInterface

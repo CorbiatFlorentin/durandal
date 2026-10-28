@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Durandal;
 
 use Durandal\Adapter\Psr18\DurandalClient;
+use Durandal\Adapter\Symfony\DurandalHttpClient;
 use Http\Discovery\Psr17FactoryDiscovery;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\StreamFactoryInterface;
+use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
  * Point d'entrée de la bibliothèque.
@@ -37,7 +39,24 @@ final class Durandal
             $client,
             $responseFactory ?? Psr17FactoryDiscovery::findResponseFactory(),
             $streamFactory ?? Psr17FactoryDiscovery::findStreamFactory(),
-            random_int(0, \PHP_INT_MAX),
+            self::randomSeed(),
         );
+    }
+
+    /**
+     * Enveloppe un client Symfony HttpClient (nécessite symfony/http-client). Sans graine explicite (withSeed()),
+     * une graine aléatoire est tirée et reste lisible via seed() pour rejouer un échec.
+     */
+    public static function wrapSymfony(HttpClientInterface $client): DurandalHttpClient
+    {
+        return new DurandalHttpClient($client, self::randomSeed());
+    }
+
+    /**
+     * @internal
+     */
+    public static function randomSeed(): int
+    {
+        return random_int(0, \PHP_INT_MAX);
     }
 }

@@ -10,6 +10,7 @@ use GuzzleHttp\Psr7\HttpFactory;
 use GuzzleHttp\Psr7\Request;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpClient\MockHttpClient;
 
 #[CoversClass(Durandal::class)]
 final class DurandalTest extends TestCase
@@ -22,6 +23,14 @@ final class DurandalTest extends TestCase
     public function testWrapDiscoversPsr17FactoriesAndDrawsASeed(): void
     {
         $client = Durandal::wrap(new StubClient());
+
+        self::assertGreaterThanOrEqual(0, $client->seed());
+        self::assertSame([], $client->rules());
+    }
+
+    public function testWrapSymfonyDrawsASeed(): void
+    {
+        $client = Durandal::wrapSymfony(new MockHttpClient());
 
         self::assertGreaterThanOrEqual(0, $client->seed());
         self::assertSame([], $client->rules());

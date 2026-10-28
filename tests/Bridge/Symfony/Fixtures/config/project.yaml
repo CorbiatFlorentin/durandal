@@ -1,0 +1,20 @@
+# Configuration d'un projet Symfony ordinaire, sans Durandal.
+framework:
+    http_client:
+        mock_response_factory: Durandal\Tests\Bridge\Symfony\Fixtures\FakeBackend
+        scoped_clients:
+            packagist.client:
+                base_uri: 'https://repo.packagist.org'
+            github.client:
+                base_uri: 'https://api.github.com'
+                retry_failed:
+                    max_retries: 2
+                    delay: 0
+
+services:
+    Durandal\Tests\Bridge\Symfony\Fixtures\FakeBackend:
+        public: true
+
+    app.custom_client:
+        class: Symfony\Component\HttpClient\MockHttpClient
+        arguments: ['@Durandal\Tests\Bridge\Symfony\Fixtures\FakeBackend', 'https://custom.example.com']

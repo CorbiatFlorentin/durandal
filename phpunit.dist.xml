@@ -21,11 +21,15 @@
         <testsuite name="contract">
             <directory>tests/Contract</directory>
         </testsuite>
+        <testsuite name="bridge">
+            <directory>tests/Bridge</directory>
+        </testsuite>
     </testsuites>
 
     <source ignoreIndirectDeprecations="true" restrictNotices="true" restrictWarnings="true">
         <include>
             <directory>src</directory>
+            <directory>bridge/symfony-bundle/src</directory>
         </include>
     </source>
 

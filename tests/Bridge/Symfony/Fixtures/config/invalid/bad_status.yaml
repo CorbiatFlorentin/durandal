@@ -1,0 +1,5 @@
+durandal:
+    clients:
+        packagist.client:
+            rules:
+                - { fault: http_error, status: 200 }

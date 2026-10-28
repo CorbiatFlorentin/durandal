@@ -23,12 +23,20 @@
         "phpstan/phpstan": "^2.1",
         "phpstan/phpstan-phpunit": "^2.0",
         "phpstan/phpstan-strict-rules": "^2.0",
+        "phpstan/phpstan-symfony": "^2.0",
         "phpunit/phpunit": "^11.5 || ^12.0",
-        "symfony/http-client": "^6.4 || ^7.4 || ^8.0"
+        "symfony/framework-bundle": "^6.4 || ^7.4 || ^8.0",
+        "symfony/http-client": "^6.4 || ^7.4 || ^8.0",
+        "symfony/yaml": "^6.4 || ^7.4 || ^8.0"
+    },
+    "suggest": {
+        "symfony/http-client": "Pour décorer Symfony HttpClient (Durandal::wrapSymfony())",
+        "symfony/framework-bundle": "Pour activer Durandal par configuration avec DurandalBundle"
     },
     "autoload": {
         "psr-4": {
-            "Durandal\\": "src/"
+            "Durandal\\": "src/",
+            "Durandal\\Bridge\\Symfony\\": "bridge/symfony-bundle/src/"
         }
     },
     "autoload-dev": {

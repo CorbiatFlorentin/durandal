@@ -1,0 +1,6 @@
+durandal:
+    clients:
+        packagist.client:
+            rules:
+                - { fault: timeout, probability: 0.1 }
+                - { fault: latency }

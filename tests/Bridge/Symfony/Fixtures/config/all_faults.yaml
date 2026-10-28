@@ -1,0 +1,9 @@
+durandal:
+    clients:
+        http_client:
+            rules:
+                - { match: { path: '/truncated' }, fault: truncated_body, keep_ratio: 0.4 }
+                - { match: { path: '/malformed' }, fault: malformed_body, body: '<html>' }
+                - { match: { path: '/teapot' }, fault: http_error, status: 418 }
+                - { match: { path: '/refused' }, fault: connection_refused }
+                - { match: { path: '/slow' }, fault: latency, ms: 100, probability: 0.5 }

@@ -1,0 +1,14 @@
+# Tout ce qu'il faut ajouter au projet pour activer Durandal.
+durandal:
+    seed: 42
+    clients:
+        packagist.client:
+            rules:
+                - { match: { host: 'repo.packagist.org', path: '/p2/*' }, fault: http_error, status: 503, retry_after: 30 }
+                - { fault: latency, ms: 800 }
+        github.client:
+            rules:
+                - { fault: http_error, status: 503, probability: 0.5 }
+        app.custom_client:
+            rules:
+                - { match: { method: POST, headers: { Idempotency-Key: ~ } }, fault: timeout }
