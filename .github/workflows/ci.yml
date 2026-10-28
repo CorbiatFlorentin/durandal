@@ -74,6 +74,10 @@ jobs:
         if: env.WITH_COVERAGE == 'true'
         run: vendor/bin/phpunit --coverage-clover build/coverage.xml
 
+      - name: Seuil de couverture (95 %)
+        if: env.WITH_COVERAGE == 'true'
+        run: php tools/check-coverage.php build/coverage.xml 95
+
       - name: Envoi de la couverture
         if: env.WITH_COVERAGE == 'true'
         uses: codecov/codecov-action@v7
