@@ -55,6 +55,8 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: ${{ env.WITH_COVERAGE == 'true' && 'pcov' || 'none' }}
+          # Sans réglage, PCOV n'instrumente que src/ et ignore bridge/.
+          ini-values: pcov.directory=.
           tools: composer:v2
 
       - name: Fixer la version de Symfony
@@ -99,6 +101,7 @@ jobs:
         with:
           php-version: '8.4'
           coverage: pcov
+          ini-values: pcov.directory=.
           tools: composer:v2
 
       - uses: ramsey/composer-install@v4
