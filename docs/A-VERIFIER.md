@@ -8,6 +8,7 @@ Note de contrôle avant de considérer la phase 3 terminée. À supprimer une fo
 - Couverture des lignes : 96,4 % (seuil 95 %), mesurée avec Xdebug
 - Symfony 6.4 + PHPUnit 11.5 en dépendances minimales : 195 tests verts
 - Projet fixture Pest (Pest 4.7.8) : 5 tests verts
+- Infection : MSI 90 % (684 mutants tués sur 755, seuil 85 %)
 
 ## À contrôler
 
@@ -20,12 +21,10 @@ Note de contrôle avant de considérer la phase 3 terminée. À supprimer une fo
    composer qa
    composer test:coverage   # attendu ≥ 95 %
    ```
-3. **Infection** : **pas encore vérifié** pour la phase 3 (seuil MSI 85 %, 90 % en phase 2).
+3. **Infection** : 90 % sur le poste Windows ; confirmer le même ordre de grandeur (seuil 85 %).
    ```bash
    composer infection
    ```
-   Si le MSI tombe sous 85 %, regarder les mutants échappés dans `src/Assert/`, `src/Journal/`
-   et `src/Scenario/`, qui sont nouveaux.
 4. **Plugin Pest** dans le projet fixture :
    ```bash
    cd tests/Fixtures/pest-project && composer install && vendor/bin/pest
