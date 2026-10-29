@@ -6,10 +6,11 @@ namespace Durandal\Bridge\Symfony\DependencyInjection;
 
 use Durandal\Adapter\Symfony\DurandalHttpClient;
 use Durandal\Bridge\Symfony\ClientFactory;
+use Durandal\Bridge\Symfony\Journals;
 use Durandal\Exception\InvalidConfiguration;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\Compiler\ServiceLocatorTagPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 
 /**
@@ -30,12 +31,10 @@ final class InjectFaultsPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
-        if (!$container->hasParameter(self::CLIENTS_PARAMETER)) {
-            return;
-        }
-
+        // Paramètres posés par DurandalBundle::loadExtension(), qui précède toujours cette passe.
         $clients = $container->getParameter(self::CLIENTS_PARAMETER);
         $seed = $container->getParameter(self::SEED_PARAMETER);
+        $decorated = [];
 
         foreach (\is_array($clients) ? $clients : [] as $id => $rules) {
             $id = (string) $id;
@@ -55,7 +54,13 @@ final class InjectFaultsPass implements CompilerPassInterface
             if (!$replaced) {
                 $durandal->setDecoratedService($id)->replaceArgument(0, new Reference('.inner'));
             }
+
+            $decorated[$id] = new Reference($durandalId);
         }
+
+        $container->register(Journals::class, Journals::class)
+            ->setPublic(true)
+            ->setArguments([ServiceLocatorTagPass::register($container, $decorated), array_keys($decorated)]);
     }
 
     /**
@@ -71,8 +76,6 @@ final class InjectFaultsPass implements CompilerPassInterface
                 $replaced = true;
             } elseif (\is_array($argument)) {
                 $arguments[$key] = self::replaceTransport($argument, $durandal, $replaced);
-            } elseif ($argument instanceof Definition) {
-                $argument->setArguments(self::replaceTransport($argument->getArguments(), $durandal, $replaced));
             }
         }
 

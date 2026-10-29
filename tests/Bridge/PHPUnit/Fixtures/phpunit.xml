@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Configuration d'un projet qui utilise l'extension Durandal (exécutée par DurandalAssertTest). -->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="../../../../vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="../../../../vendor/autoload.php"
+         cacheResult="false"
+         colors="false">
+    <testsuites>
+        <testsuite name="fixture">
+            <file>FailingSuite.php</file>
+        </testsuite>
+    </testsuites>
+
+    <extensions>
+        <bootstrap class="Durandal\Bridge\PHPUnit\Extension"/>
+    </extensions>
+</phpunit>

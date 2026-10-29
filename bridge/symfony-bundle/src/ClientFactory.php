@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Durandal\Bridge\Symfony;
 
+use Durandal\Adapter\Settings;
 use Durandal\Adapter\Symfony\DurandalHttpClient;
 use Durandal\Durandal;
 use Durandal\Exception\InvalidConfiguration;
@@ -41,7 +42,7 @@ final class ClientFactory
 
     public static function create(HttpClientInterface $client, mixed $rules, ?int $seed): DurandalHttpClient
     {
-        return new DurandalHttpClient($client, $seed ?? Durandal::randomSeed(), self::rules($rules));
+        return new DurandalHttpClient($client, new Settings($seed ?? Durandal::defaultSeed(), self::rules($rules)));
     }
 
     /**

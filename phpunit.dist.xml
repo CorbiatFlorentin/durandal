@@ -30,6 +30,8 @@
         <include>
             <directory>src</directory>
             <directory>bridge/symfony-bundle/src</directory>
+            <directory>bridge/phpunit/src</directory>
+            <directory>bridge/pest/src</directory>
         </include>
     </source>
 

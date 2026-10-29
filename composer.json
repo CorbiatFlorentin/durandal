@@ -12,6 +12,7 @@
     "require": {
         "php": ">=8.2 <8.6",
         "php-http/discovery": "^1.19",
+        "psr/clock": "^1.0",
         "psr/http-client": "^1.0",
         "psr/http-factory": "^1.0",
         "psr/http-message": "^1.1 || ^2.0"
@@ -36,8 +37,13 @@
     "autoload": {
         "psr-4": {
             "Durandal\\": "src/",
-            "Durandal\\Bridge\\Symfony\\": "bridge/symfony-bundle/src/"
-        }
+            "Durandal\\Bridge\\Symfony\\": "bridge/symfony-bundle/src/",
+            "Durandal\\Bridge\\PHPUnit\\": "bridge/phpunit/src/",
+            "Durandal\\Bridge\\Pest\\": "bridge/pest/src/"
+        },
+        "files": [
+            "bridge/pest/Autoload.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {

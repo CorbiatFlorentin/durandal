@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Durandal\Tests\Contract;
 
+use Durandal\Adapter\Settings;
 use Durandal\Adapter\Symfony\DurandalHttpClient;
 use Durandal\Adapter\Symfony\FailingResponse;
 use Durandal\Adapter\Symfony\FaultTransport;
@@ -11,7 +12,9 @@ use Durandal\Adapter\Symfony\SimulatedConnectionRefused;
 use Durandal\Adapter\Symfony\SimulatedTimeout;
 use Durandal\Clock\Sleeper;
 use Durandal\Durandal;
+use Durandal\Journal\Journal;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Psr\Clock\ClockInterface;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
@@ -21,6 +24,7 @@ use Throwable;
  * Suite de contrat exécutée sur l'adaptateur Symfony HttpClient, autour d'un MockHttpClient qui joue le faux serveur.
  */
 #[CoversClass(DurandalHttpClient::class)]
+#[CoversClass(Settings::class)]
 #[CoversClass(FaultTransport::class)]
 #[CoversClass(FailingResponse::class)]
 final class SymfonyHttpClientContractTest extends AdapterContractTestCase
@@ -40,7 +44,7 @@ final class SymfonyHttpClientContractTest extends AdapterContractTestCase
         return $this->calls;
     }
 
-    protected function durandal(array $rules, int $seed, Sleeper $sleeper): ContractClient
+    protected function durandal(array $rules, int $seed, Sleeper $sleeper, array $scenarios, ClockInterface $clock): ContractClient
     {
         $backend = new MockHttpClient(function (): MockResponse {
             ++$this->calls;
@@ -49,13 +53,21 @@ final class SymfonyHttpClientContractTest extends AdapterContractTestCase
             return new MockResponse($body, ['http_code' => $status, 'response_headers' => $headers]);
         });
 
-        $client = Durandal::wrapSymfony($backend)->withSeed($seed)->withSleeper($sleeper);
+        $client = Durandal::wrapSymfony($backend)->withSeed($seed)->withSleeper($sleeper)->withClock($clock);
         foreach ($rules as $rule) {
             $client = $client->withRule($rule);
+        }
+        foreach ($scenarios as $scenario) {
+            $client = $client->withScenario($scenario);
         }
 
         return new class ($client) implements ContractClient {
             public function __construct(private readonly DurandalHttpClient $client) {}
+
+            public function journal(): Journal
+            {
+                return $this->client->journal();
+            }
 
             public function send(string $method, string $url, array $headers = []): ContractResult
             {

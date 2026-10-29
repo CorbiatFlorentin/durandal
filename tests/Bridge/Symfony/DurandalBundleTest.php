@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Durandal\Tests\Bridge\Symfony;
 
 use Durandal\Adapter\Symfony\SimulatedTimeout;
+use Durandal\Bridge\PHPUnit\DurandalAssert;
 use Durandal\Bridge\Symfony\ClientFactory;
 use Durandal\Bridge\Symfony\DependencyInjection\InjectFaultsPass;
 use Durandal\Bridge\Symfony\DurandalBundle;
+use Durandal\Bridge\Symfony\Journals;
 use Durandal\Exception\InvalidConfiguration;
 use Durandal\Tests\Bridge\Symfony\Fixtures\FakeBackend;
 use Durandal\Tests\Bridge\Symfony\Fixtures\TestKernel;
@@ -22,6 +24,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 #[CoversClass(DurandalBundle::class)]
 #[CoversClass(InjectFaultsPass::class)]
 #[CoversClass(ClientFactory::class)]
+#[CoversClass(Journals::class)]
 final class DurandalBundleTest extends TestCase
 {
     private ?TestKernel $kernel = null;
@@ -82,6 +85,38 @@ final class DurandalBundleTest extends TestCase
         self::assertSame(200, $response->getStatusCode());
         self::assertSame(1, $response->getInfo('retry_count'));
         self::assertSame(['GET https://api.github.com/repos/symfony/symfony'], $this->backend()->requests);
+    }
+
+    public function testTheJournalOfEachClientIsAvailable(): void
+    {
+        $this->boot('project.yaml', 'durandal.yaml');
+        $this->client('github.client')->request('GET', '/repos/symfony/symfony')->getContent();
+
+        $journal = $this->journals()->of('github.client');
+
+        DurandalAssert::retriedExactly(1, $journal);
+        self::assertSame(42, $journal->seed);
+        self::assertSame('GET https://api.github.com/repos/symfony/symfony', $journal->entries()[0]->target());
+        self::assertCount(0, $this->journals()->of('packagist.client'));
+    }
+
+    public function testAskingForTheJournalOfAnUndecoratedClientIsAnError(): void
+    {
+        $this->boot('project.yaml', 'durandal.yaml');
+
+        $this->expectException(InvalidConfiguration::class);
+        $this->expectExceptionMessage('Le client HTTP « http_client » n\'est pas décoré par Durandal (clients configurés : packagist.client, github.client, app.custom_client).');
+
+        $this->journals()->of('http_client');
+    }
+
+    public function testWithoutConfiguredClientsNoJournalIsAvailable(): void
+    {
+        $this->boot('project.yaml');
+
+        $this->expectExceptionMessage('(clients configurés : aucun)');
+
+        $this->journals()->of('packagist.client');
     }
 
     public function testCustomClientServicesAreDecorated(): void
@@ -187,6 +222,14 @@ final class DurandalBundleTest extends TestCase
         self::assertInstanceOf(HttpClientInterface::class, $client);
 
         return $client;
+    }
+
+    private function journals(): Journals
+    {
+        $journals = $this->container()->get(Journals::class);
+        self::assertInstanceOf(Journals::class, $journals);
+
+        return $journals;
     }
 
     private function backend(): FakeBackend

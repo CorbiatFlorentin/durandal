@@ -11,6 +11,10 @@ parameters:
         - bridge
         - tests
         - tools
+    excludePaths:
+        # Pest n'est pas installé ici (il fige PHPUnit) : ces fichiers sont vérifiés par le projet fixture Pest.
+        - bridge/pest/Autoload.php
+        - tests/Fixtures/pest-project
     tmpDir: var/phpstan
     checkUninitializedProperties: true
     checkImplicitMixed: true

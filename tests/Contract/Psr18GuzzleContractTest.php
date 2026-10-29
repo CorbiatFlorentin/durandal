@@ -7,8 +7,10 @@ namespace Durandal\Tests\Contract;
 use Durandal\Adapter\Psr18\DurandalClient;
 use Durandal\Adapter\Psr18\SimulatedConnectionRefused;
 use Durandal\Adapter\Psr18\SimulatedTimeout;
+use Durandal\Adapter\Settings;
 use Durandal\Clock\Sleeper;
 use Durandal\Durandal;
+use Durandal\Journal\Journal;
 use GuzzleHttp\Client;
 use GuzzleHttp\HandlerStack;
 use GuzzleHttp\Promise\FulfilledPromise;
@@ -17,6 +19,7 @@ use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use LogicException;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Psr\Clock\ClockInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 
@@ -25,6 +28,7 @@ use Psr\Http\Message\ResponseInterface;
  * dont seul le transport réseau est remplacé par un faux serveur.
  */
 #[CoversClass(DurandalClient::class)]
+#[CoversClass(Settings::class)]
 final class Psr18GuzzleContractTest extends AdapterContractTestCase
 {
     private int $calls = 0;
@@ -41,7 +45,7 @@ final class Psr18GuzzleContractTest extends AdapterContractTestCase
         return $this->calls;
     }
 
-    protected function durandal(array $rules, int $seed, Sleeper $sleeper): ContractClient
+    protected function durandal(array $rules, int $seed, Sleeper $sleeper, array $scenarios, ClockInterface $clock): ContractClient
     {
         /**
          * Faux transport réseau : remplace le gestionnaire cURL de Guzzle.
@@ -59,13 +63,21 @@ final class Psr18GuzzleContractTest extends AdapterContractTestCase
         $factory = new HttpFactory();
         $client = Durandal::wrap(new Client(['handler' => HandlerStack::create($transport)]), $factory, $factory)
             ->withSeed($seed)
-            ->withSleeper($sleeper);
+            ->withSleeper($sleeper)->withClock($clock);
         foreach ($rules as $rule) {
             $client = $client->withRule($rule);
+        }
+        foreach ($scenarios as $scenario) {
+            $client = $client->withScenario($scenario);
         }
 
         return new class ($client) implements ContractClient {
             public function __construct(private readonly DurandalClient $client) {}
+
+            public function journal(): Journal
+            {
+                return $this->client->journal();
+            }
 
             public function send(string $method, string $url, array $headers = []): ContractResult
             {

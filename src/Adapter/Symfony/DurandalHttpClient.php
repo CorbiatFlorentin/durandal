@@ -5,20 +5,16 @@ declare(strict_types=1);
 namespace Durandal\Adapter\Symfony;
 
 use Closure;
-use Durandal\Adapter\FaultShortcuts;
-use Durandal\Clock\NullSleeper;
-use Durandal\Clock\Sleeper;
+use Durandal\Adapter\ConfiguresFaults;
+use Durandal\Adapter\Settings;
 use Durandal\Engine\FaultEngine;
-use Durandal\Exception\InvalidConfiguration;
 use Durandal\Fault\ConnectionRefused;
 use Durandal\Fault\HttpError;
-use Durandal\Fault\Latency;
 use Durandal\Fault\MalformedBody;
 use Durandal\Fault\Timeout;
 use Durandal\Fault\TruncatedBody;
 use Durandal\Http\RequestInfo;
-use Durandal\Random\SeededRandomizer;
-use Durandal\Rule\Rule;
+use Durandal\Journal\Journal;
 use Generator;
 use LogicException;
 use Symfony\Component\HttpClient\AsyncDecoratorTrait;
@@ -33,8 +29,7 @@ use Symfony\Contracts\Service\ResetInterface;
 /**
  * Décorateur Symfony HttpClient qui injecte des pannes dans un vrai client, streaming asynchrone compris.
  *
- * La configuration est immuable : chaque with…() renvoie un nouveau client, dont la séquence aléatoire
- * repart de la graine. Une même instance, elle, avance dans sa séquence à chaque requête.
+ * La configuration est immuable : voir ConfiguresFaults.
  *
  * Le décorateur doit voir des URL absolues pour cibler un hôte : placez-le sous les clients qui résolvent
  * base_uri (le bundle le fait pour vous), ou passez l'option base_uri à chaque requête.
@@ -42,69 +37,25 @@ use Symfony\Contracts\Service\ResetInterface;
 final class DurandalHttpClient implements HttpClientInterface, ResetInterface
 {
     use AsyncDecoratorTrait;
-    use FaultShortcuts;
-
-    private const SUPPORTED_FAULTS = [
-        Latency::class,
-        HttpError::class,
-        Timeout::class,
-        ConnectionRefused::class,
-        TruncatedBody::class,
-        MalformedBody::class,
-    ];
+    use ConfiguresFaults;
 
     private readonly FaultEngine $engine;
+
+    private readonly Journal $journal;
 
     private readonly FaultTransport $transport;
 
     /**
      * @internal utilisez Durandal::wrapSymfony() puis les with…() : la liste des paramètres pourra évoluer
-     *
-     * @param list<Rule> $rules
      */
     public function __construct(
         HttpClientInterface $client,
-        private readonly int $seed,
-        private readonly array $rules = [],
-        private readonly Sleeper $sleeper = new NullSleeper(),
+        private readonly Settings $settings,
     ) {
-        foreach ($rules as $rule) {
-            if (!\in_array($rule->fault::class, self::SUPPORTED_FAULTS, true)) {
-                throw new InvalidConfiguration(\sprintf("La panne %s n'est pas prise en charge par l'adaptateur Symfony HttpClient.", $rule->fault::class));
-            }
-        }
-
         $this->client = $client;
         $this->transport = new FaultTransport($client);
-        $this->engine = new FaultEngine($rules, new SeededRandomizer($seed));
-    }
-
-    public function seed(): int
-    {
-        return $this->seed;
-    }
-
-    /**
-     * @return list<Rule>
-     */
-    public function rules(): array
-    {
-        return $this->rules;
-    }
-
-    public function withRule(Rule $rule): self
-    {
-        return new self($this->client, $this->seed, [...$this->rules, $rule], $this->sleeper);
-    }
-
-    public function withSeed(int $seed): self
-    {
-        return new self($this->client, $seed, $this->rules, $this->sleeper);
-    }
-
-    public function withSleeper(Sleeper $sleeper): self
-    {
-        return new self($this->client, $this->seed, $this->rules, $sleeper);
+        $this->engine = $settings->engine();
+        $this->journal = new Journal($settings->seed);
     }
 
     /**
@@ -114,7 +65,7 @@ final class DurandalHttpClient implements HttpClientInterface, ResetInterface
      */
     public function withOptions(array $options): static
     {
-        return new self($this->client->withOptions($options), $this->seed, $this->rules, $this->sleeper);
+        return new self($this->client->withOptions($options), $this->settings);
     }
 
     /**
@@ -122,10 +73,12 @@ final class DurandalHttpClient implements HttpClientInterface, ResetInterface
      */
     public function request(string $method, string $url, array $options = []): ResponseInterface
     {
-        $decision = $this->engine->decide(self::describe($method, $url, $options));
+        $info = self::describe($method, $url, $options);
+        $decision = $this->engine->decide($info);
+        $this->journal->record($this->settings->clock->now(), $url, $info, self::body($options), $decision);
 
         if ($decision->latencyMilliseconds > 0) {
-            $this->sleeper->sleep($decision->latencyMilliseconds);
+            $this->settings->sleeper->sleep($decision->latencyMilliseconds);
         }
 
         $fault = $decision->fault;
@@ -137,11 +90,35 @@ final class DurandalHttpClient implements HttpClientInterface, ResetInterface
             $fault instanceof ConnectionRefused => $this->serve(new FailingResponse(SimulatedConnectionRefused::for($method, $url))),
             $fault instanceof TruncatedBody => self::truncate($fault),
             $fault instanceof MalformedBody => $this->malform($fault, $method, $url, $options),
-            // Inatteignable : le constructeur refuse les pannes inconnues.
+            // Inatteignable : Settings refuse les pannes inconnues.
             default => throw new LogicException(\sprintf('Panne non prise en charge : %s.', $fault::class)),
         };
 
         return new AsyncResponse($this->transport, $method, $url, $options, $passthru);
+    }
+
+    protected function withSettings(Settings $settings): self
+    {
+        return new self($this->client, $settings);
+    }
+
+    /**
+     * Le corps tel que le code testé l'a fourni, quand il est connu d'avance (chaîne, formulaire ou JSON).
+     *
+     * @param array<mixed> $options
+     */
+    private static function body(array $options): ?string
+    {
+        $body = $options['body'] ?? null;
+        if (\array_key_exists('json', $options)) {
+            $body = json_encode($options['json']);
+        }
+
+        return match (true) {
+            \is_string($body) => $body,
+            \is_array($body) => http_build_query($body),
+            default => null,
+        };
     }
 
     /**
@@ -149,10 +126,9 @@ final class DurandalHttpClient implements HttpClientInterface, ResetInterface
      */
     private static function describe(string $method, string $url, array $options): RequestInfo
     {
+        // Une URL que parse_url() refuse sera de toute façon rejetée par le client : on la décrit sans hôte.
         $parts = parse_url($url);
-        if ($parts === false) {
-            $parts = [];
-        }
+        $parts = \is_array($parts) ? $parts : [];
         $host = $parts['host'] ?? null;
         if ($host === null && \is_string($options['base_uri'] ?? null)) {
             // URL relative : l'hôte vient de base_uri.
@@ -171,14 +147,12 @@ final class DurandalHttpClient implements HttpClientInterface, ResetInterface
     {
         $normalized = [];
         foreach (is_iterable($headers) ? $headers : [] as $name => $values) {
-            if (\is_int($name)) {
-                if (!\is_string($values) || !str_contains($values, ':')) {
-                    continue;
-                }
+            if (\is_int($name) && \is_string($values) && str_contains($values, ':')) {
                 [$name, $values] = explode(':', $values, 2);
             }
 
             if (!\is_string($name)) {
+                // Entrée sans nom : invalide, Symfony la refusera.
                 continue;
             }
 
@@ -243,9 +217,8 @@ final class DurandalHttpClient implements HttpClientInterface, ResetInterface
     {
         return function (ChunkInterface $chunk, AsyncContext $context) use ($fault, $method, $url, $options): Generator {
             if ($chunk->getError() !== null) {
-                yield $chunk;
-
-                return;
+                // Une erreur du vrai transport termine le flux : elle remonte telle quelle.
+                return yield $chunk;
             }
 
             $headers = $context->getHeaders();

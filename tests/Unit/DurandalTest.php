@@ -36,6 +36,18 @@ final class DurandalTest extends TestCase
         self::assertSame([], $client->rules());
     }
 
+    public function testDurandalSeedForcesTheSeedToReplayAFailure(): void
+    {
+        putenv('DURANDAL_SEED=1234');
+        try {
+            self::assertSame(1234, Durandal::wrapSymfony(new MockHttpClient())->seed());
+            putenv('DURANDAL_SEED=pas-un-nombre');
+            self::assertNotSame(1234, Durandal::defaultSeed());
+        } finally {
+            putenv('DURANDAL_SEED');
+        }
+    }
+
     public function testWrapUsesTheGivenFactories(): void
     {
         $factory = new HttpFactory();

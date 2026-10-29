@@ -4,20 +4,16 @@ declare(strict_types=1);
 
 namespace Durandal\Adapter\Psr18;
 
-use Durandal\Adapter\FaultShortcuts;
-use Durandal\Clock\NullSleeper;
-use Durandal\Clock\Sleeper;
+use Durandal\Adapter\ConfiguresFaults;
+use Durandal\Adapter\Settings;
 use Durandal\Engine\FaultEngine;
-use Durandal\Exception\InvalidConfiguration;
 use Durandal\Fault\ConnectionRefused;
 use Durandal\Fault\HttpError;
-use Durandal\Fault\Latency;
 use Durandal\Fault\MalformedBody;
 use Durandal\Fault\Timeout;
 use Durandal\Fault\TruncatedBody;
 use Durandal\Http\RequestInfo;
-use Durandal\Random\SeededRandomizer;
-use Durandal\Rule\Rule;
+use Durandal\Journal\Journal;
 use LogicException;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestInterface;
@@ -28,80 +24,37 @@ use Psr\Http\Message\StreamFactoryInterface;
 /**
  * Décorateur PSR-18 qui injecte des pannes dans un vrai client.
  *
- * La configuration est immuable : chaque with…() renvoie un nouveau client, dont la séquence aléatoire
- * repart de la graine. Une même instance, elle, avance dans sa séquence à chaque requête.
+ * La configuration est immuable : voir ConfiguresFaults.
  */
 final class DurandalClient implements ClientInterface
 {
-    use FaultShortcuts;
-
-    private const SUPPORTED_FAULTS = [
-        Latency::class,
-        HttpError::class,
-        Timeout::class,
-        ConnectionRefused::class,
-        TruncatedBody::class,
-        MalformedBody::class,
-    ];
+    use ConfiguresFaults;
 
     private readonly FaultEngine $engine;
 
+    private readonly Journal $journal;
+
     /**
      * @internal utilisez Durandal::wrap() puis les with…() : la liste des paramètres pourra évoluer
-     *
-     * @param list<Rule> $rules
      */
     public function __construct(
         private readonly ClientInterface $inner,
         private readonly ResponseFactoryInterface $responseFactory,
         private readonly StreamFactoryInterface $streamFactory,
-        private readonly int $seed,
-        private readonly array $rules = [],
-        private readonly Sleeper $sleeper = new NullSleeper(),
+        private readonly Settings $settings,
     ) {
-        foreach ($rules as $rule) {
-            if (!\in_array($rule->fault::class, self::SUPPORTED_FAULTS, true)) {
-                throw new InvalidConfiguration(\sprintf("La panne %s n'est pas prise en charge par l'adaptateur PSR-18.", $rule->fault::class));
-            }
-        }
-
-        $this->engine = new FaultEngine($rules, new SeededRandomizer($seed));
-    }
-
-    public function seed(): int
-    {
-        return $this->seed;
-    }
-
-    /**
-     * @return list<Rule>
-     */
-    public function rules(): array
-    {
-        return $this->rules;
-    }
-
-    public function withRule(Rule $rule): self
-    {
-        return new self($this->inner, $this->responseFactory, $this->streamFactory, $this->seed, [...$this->rules, $rule], $this->sleeper);
-    }
-
-    public function withSeed(int $seed): self
-    {
-        return new self($this->inner, $this->responseFactory, $this->streamFactory, $seed, $this->rules, $this->sleeper);
-    }
-
-    public function withSleeper(Sleeper $sleeper): self
-    {
-        return new self($this->inner, $this->responseFactory, $this->streamFactory, $this->seed, $this->rules, $sleeper);
+        $this->engine = $settings->engine();
+        $this->journal = new Journal($settings->seed);
     }
 
     public function sendRequest(RequestInterface $request): ResponseInterface
     {
-        $decision = $this->engine->decide(self::describe($request));
+        $info = self::describe($request);
+        $decision = $this->engine->decide($info);
+        $this->journal->record($this->settings->clock->now(), (string) $request->getUri(), $info, self::body($request), $decision);
 
         if ($decision->latencyMilliseconds > 0) {
-            $this->sleeper->sleep($decision->latencyMilliseconds);
+            $this->settings->sleeper->sleep($decision->latencyMilliseconds);
         }
 
         $fault = $decision->fault;
@@ -121,9 +74,30 @@ final class DurandalClient implements ClientInterface
                 $this->inner->sendRequest($request),
                 static fn(): string => $fault->body,
             )->withoutHeader('Content-Length')->withoutHeader('Content-Encoding'),
-            // Inatteignable : le constructeur refuse les pannes inconnues.
+            // Inatteignable : Settings refuse les pannes inconnues.
             default => throw new LogicException(\sprintf('Panne non prise en charge : %s.', $fault::class)),
         };
+    }
+
+    protected function withSettings(Settings $settings): self
+    {
+        return new self($this->inner, $this->responseFactory, $this->streamFactory, $settings);
+    }
+
+    /**
+     * Le corps n'est lu que s'il peut être rembobiné, pour ne pas priver le vrai client de son contenu.
+     */
+    private static function body(RequestInterface $request): ?string
+    {
+        $body = $request->getBody();
+        if (!$body->isSeekable()) {
+            return null;
+        }
+
+        $content = (string) $body;
+        $body->rewind();
+
+        return $content;
     }
 
     private static function describe(RequestInterface $request): RequestInfo

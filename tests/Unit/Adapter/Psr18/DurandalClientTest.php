@@ -8,6 +8,7 @@ use Durandal\Adapter\Psr18\DurandalClient;
 use Durandal\Adapter\Psr18\SimulatedConnectionRefused;
 use Durandal\Adapter\Psr18\SimulatedNetworkException;
 use Durandal\Adapter\Psr18\SimulatedTimeout;
+use Durandal\Adapter\Settings;
 use Durandal\Clock\NullSleeper;
 use Durandal\Exception\InvalidConfiguration;
 use Durandal\Fault\ConnectionRefused;
@@ -18,16 +19,20 @@ use Durandal\Fault\MalformedBody;
 use Durandal\Fault\Timeout;
 use Durandal\Rule\RequestMatcher;
 use Durandal\Rule\Rule;
+use Durandal\Scenario\Scenario;
 use Durandal\Tests\Support\RecordingSleeper;
 use Durandal\Tests\Support\StubClient;
 use GuzzleHttp\Psr7\HttpFactory;
+use GuzzleHttp\Psr7\NoSeekStream;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
+use GuzzleHttp\Psr7\Utils;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Client\NetworkExceptionInterface;
 
 #[CoversClass(DurandalClient::class)]
+#[CoversClass(Settings::class)]
 #[CoversClass(SimulatedNetworkException::class)]
 #[CoversClass(SimulatedTimeout::class)]
 #[CoversClass(SimulatedConnectionRefused::class)]
@@ -132,6 +137,39 @@ final class DurandalClientTest extends TestCase
         self::client()->withRule(new Rule($custom));
     }
 
+    public function testUnsupportedFaultsAreAlsoRejectedInScenarios(): void
+    {
+        $this->expectException(InvalidConfiguration::class);
+        $this->expectExceptionMessage('pas prise en charge par Durandal');
+
+        self::client()->withScenario(Scenario::faultTimes(1, new class implements Fault {}));
+    }
+
+    public function testTheJournalKeepsTheBodyAndLeavesItReadable(): void
+    {
+        $inner = new StubClient();
+        $factory = new HttpFactory();
+        $client = new DurandalClient($inner, $factory, $factory, new Settings(42));
+
+        $client->sendRequest(new Request('POST', 'https://api.example.com/orders', [], '{"id":1}'));
+        $client->sendRequest((new Request('POST', 'https://api.example.com/orders'))->withBody(new NoSeekStream(Utils::streamFor('flux'))));
+
+        self::assertSame('{"id":1}', $client->journal()->entries()[0]->body);
+        self::assertNull($client->journal()->entries()[1]->body);
+        self::assertSame('{"id":1}', $inner->requests[0]->getBody()->getContents());
+    }
+
+    public function testEveryNewClientStartsANewJournal(): void
+    {
+        $client = self::client();
+        $client->sendRequest(self::request());
+
+        self::assertCount(1, $client->journal());
+        self::assertCount(0, $client->withSeed(1)->journal());
+        self::assertSame([], $client->scenarios());
+        self::assertCount(1, $client->withScenario(Scenario::failTimes(1))->scenarios());
+    }
+
     public function testHostFallsBackToTheHostHeaderForRelativeUris(): void
     {
         $client = self::client()->failRate(1.0, 503, RequestMatcher::any()->host('api.example.com'));
@@ -145,7 +183,7 @@ final class DurandalClientTest extends TestCase
     {
         $inner = new StubClient(new Response(200, ['Content-Encoding' => 'gzip', 'Content-Length' => '42'], 'compressé'));
         $factory = new HttpFactory();
-        $client = (new DurandalClient($inner, $factory, $factory, 42))->withRule(new Rule(new MalformedBody()));
+        $client = (new DurandalClient($inner, $factory, $factory, new Settings(42)))->withRule(new Rule(new MalformedBody()));
 
         $response = $client->sendRequest(self::request());
 
@@ -158,7 +196,7 @@ final class DurandalClientTest extends TestCase
     {
         $factory = new HttpFactory();
 
-        return new DurandalClient(new StubClient(), $factory, $factory, $seed);
+        return new DurandalClient(new StubClient(), $factory, $factory, new Settings($seed));
     }
 
     private static function request(string $method = 'GET', string $uri = 'https://api.example.com/orders'): Request

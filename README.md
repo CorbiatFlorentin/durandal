@@ -9,7 +9,7 @@ Bibliothèque PHP de **tests de résilience** : elle simule des pannes réseau (
 - Cœur indépendant du framework (PSR-18, PSR-20), intégration Symfony, PHPUnit et Pest
 - Tests déterministes (graine fixe) et rapides (horloge virtuelle, aucune vraie attente)
 
-> 🚧 En développement (phase 2 : adaptateur Symfony HttpClient et bundle) — voir le [plan](docs/PLAN.md).
+> 🚧 En développement (phase 3 : journal, scénarios et assertions) — voir le [plan](docs/PLAN.md).
 
 ## Utilisation (PSR-18)
 
@@ -65,6 +65,67 @@ durandal:
 
 Pannes : `latency` (`ms`), `http_error` (`status`, `retry_after`), `timeout`, `connection_refused`, `truncated_body` (`keep_ratio`), `malformed_body` (`body`). Filtres de `match` : `method`, `host`, `path` (joker `*`), `headers` (`~` : présence seule).
 Pour les clients de FrameworkBundle, Durandal se place juste au-dessus du transport : il voit les URL absolues, et les réessais de `retry_failed` portent sur les pannes simulées. Une configuration invalide est signalée dès la compilation du conteneur, avec le client et la règle en cause.
+
+Le journal d'un client décoré s'obtient par son identifiant : `static::getContainer()->get(Durandal\Bridge\Symfony\Journals::class)->of('packagist.client')`.
+
+## Scénarios
+
+Un scénario rejoue une séquence d'étapes, dans l'ordre, sur les requêtes qu'il vise ; une fois terminé, les requêtes passent. Les scénarios sont joués avant les règles.
+
+```php
+use Durandal\Scenario\Scenario;
+
+$client = $client
+    ->withScenario(Scenario::failTimes(2, status: 503)->thenSucceed())                      // 2 échecs puis OK
+    ->withScenario(Scenario::succeedTimes(1)->then(Scenario::offlineFor(5)))                  // OK, puis hors ligne 5 s
+    ->withScenario(Scenario::slowThenFast(3, 2000)->forRequests(RequestMatcher::any()->host('api.github.com')));
+```
+
+Étapes : `failTimes`, `timeoutTimes`, `faultTimes` (toute panne), `succeedTimes`, `offlineFor` (durée), `slowThenFast`, enchaînées par `then()`.
+Les durées se mesurent avec l'horloge du client (`withClock()`, PSR-20, horloge système par défaut) : donnez-lui l'horloge qu'utilise le code testé, `MockClock` de `symfony/clock` par exemple.
+
+## Journal et assertions
+
+Chaque client tient le journal de ses requêtes : `$client->journal()`.
+
+```php
+use Durandal\Bridge\PHPUnit\DurandalAssert;
+
+DurandalAssert::retriedExactly(2, $client->journal());                          // tentatives au-delà de la première, par méthode et URL
+DurandalAssert::gaveUpAfter(3, $client->journal());                             // 3 tentatives, la dernière en échec
+DurandalAssert::noDuplicateWrites($client->journal(), idempotencyHeader: 'Idempotency-Key');
+DurandalAssert::respectedRetryAfter($client->journal());                        // délai mesuré avec l'horloge du client
+```
+
+Un échec affiche la raison, la graine et le journal :
+
+```
+Durandal : 2 réessai(s) attendu(s), 0 constaté(s) — GET https://api.example.com/orders : 1 tentative(s).
+Graine 1234 (rejouer : DURANDAL_SEED=1234)
+#1  10:00:00.000  GET https://api.example.com/orders  → 503 simulé
+```
+
+Pour rejouer un échec, `DURANDAL_SEED=1234 vendor/bin/phpunit --filter …` impose la graine aux clients créés sans `withSeed()`.
+
+### Extension PHPUnit
+
+```xml
+<extensions>
+    <bootstrap class="Durandal\Bridge\PHPUnit\Extension"/>
+</extensions>
+```
+
+Quand un test échoue, pour n'importe quelle raison, l'extension affiche à la fin de l'exécution la graine et les requêtes de chaque client Durandal qu'il a utilisé.
+
+### Pest
+
+Les attentes sont chargées automatiquement quand Pest est installé ; elles acceptent un client Durandal ou son journal.
+
+```php
+expect($client)->toHaveRetriedExactly(2)->toHaveNoDuplicateWrites();
+expect($client)->toHaveGivenUpAfter(3);
+expect($client)->toHaveRespectedRetryAfter();
+```
 
 ## Développement
 

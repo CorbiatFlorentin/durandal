@@ -1,0 +1,25 @@
+{
+    "name": "durandal/pest-fixture",
+    "description": "Projet minimal qui utilise Durandal avec Pest : vérifie le plugin Pest en conditions réelles.",
+    "type": "project",
+    "license": "MIT",
+    "require-dev": {
+        "corbiatflorentin/durandal": "@dev",
+        "guzzlehttp/guzzle": "^7.9",
+        "pestphp/pest": "^3.8 || ^4.0"
+    },
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../.."
+        }
+    ],
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "php-http/discovery": false
+        }
+    }
+}

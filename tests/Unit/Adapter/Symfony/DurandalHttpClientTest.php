@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Durandal\Tests\Unit\Adapter\Symfony;
 
 use Closure;
+use Durandal\Adapter\Settings;
 use Durandal\Adapter\Symfony\DurandalHttpClient;
 use Durandal\Adapter\Symfony\FailingResponse;
 use Durandal\Adapter\Symfony\FaultTransport;
@@ -17,6 +18,7 @@ use Durandal\Fault\HttpError;
 use Durandal\Fault\MalformedBody;
 use Durandal\Fault\Timeout;
 use Durandal\Fault\TruncatedBody;
+use Durandal\Journal\Entry;
 use Durandal\Rule\RequestMatcher;
 use Durandal\Rule\Rule;
 use Durandal\Tests\Support\RecordingSleeper;
@@ -74,7 +76,7 @@ final class DurandalHttpClientTest extends TestCase
     public function testUnsupportedFaultsAreRejected(): void
     {
         $this->expectException(InvalidConfiguration::class);
-        $this->expectExceptionMessage("n'est pas prise en charge par l'adaptateur Symfony HttpClient");
+        $this->expectExceptionMessage("n'est pas prise en charge par Durandal");
 
         $this->client()->withRule(new Rule(new class implements Fault {}));
     }
@@ -162,10 +164,25 @@ final class DurandalHttpClientTest extends TestCase
         self::assertContains('X-Default: yes', self::receivedHeaders($this->received[0][2]));
     }
 
+    public function testTheJournalKeepsBodiesKnownInAdvance(): void
+    {
+        $client = $this->client();
+
+        $client->request('POST', self::URL, ['body' => 'brut'])->getContent();
+        $client->request('POST', self::URL, ['body' => ['a' => '1', 'b' => '2']])->getContent();
+        $client->request('POST', self::URL, ['json' => ['id' => 1]])->getContent();
+        $client->request('POST', self::URL, ['body' => static fn(): string => ''])->getContent();
+
+        self::assertSame(
+            ['brut', 'a=1&b=2', '{"id":1}', null],
+            array_map(static fn(Entry $entry): ?string => $entry->body, $client->journal()->entries()),
+        );
+    }
+
     public function testResetIsForwardedToTheInnerClient(): void
     {
         $backend = new MockHttpClient(new MockResponse('ok'));
-        $client = new DurandalHttpClient($backend, 1);
+        $client = new DurandalHttpClient($backend, new Settings(1));
 
         $client->request('GET', self::URL)->getContent();
         $client->reset();
@@ -226,7 +243,7 @@ final class DurandalHttpClientTest extends TestCase
             return $this->backendResponse ?? new MockResponse('ok');
         });
 
-        return new DurandalHttpClient($backend, $seed);
+        return new DurandalHttpClient($backend, new Settings($seed));
     }
 
     /**

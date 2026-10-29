@@ -82,7 +82,7 @@ durandal:
 public function testSyncSurvivesFlakyApi(): void
 {
     $client = Durandal::wrap($this->httpClient)
-        ->scenario(Scenario::failTimes(2, status: 503)->thenSucceed())
+        ->withScenario(Scenario::failTimes(2, status: 503)->thenSucceed())
         ->withClock($this->clock);
 
     $result = (new OrderSync($client))->run();

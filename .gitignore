@@ -6,3 +6,5 @@
 /.php-cs-fixer.cache
 /infection.log
 /infection.html
+/tests/Fixtures/pest-project/vendor/
+/tests/Fixtures/pest-project/composer.lock

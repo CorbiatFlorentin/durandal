@@ -13,8 +13,11 @@ use Durandal\Fault\Timeout;
 use Durandal\Fault\TruncatedBody;
 use Durandal\Rule\RequestMatcher;
 use Durandal\Rule\Rule;
+use Durandal\Scenario\Scenario;
+use Durandal\Tests\Support\FrozenClock;
 use Durandal\Tests\Support\RecordingSleeper;
 use PHPUnit\Framework\TestCase;
+use Psr\Clock\ClockInterface;
 
 /**
  * Suite de contrat : chaque adaptateur (PSR-18, Symfony HttpClient…) doit se comporter exactement de la même façon.
@@ -27,6 +30,8 @@ abstract class AdapterContractTestCase extends TestCase
     protected const BODY = '{"orders":[1,2,3]}';
 
     protected RecordingSleeper $sleeper;
+
+    protected FrozenClock $clock;
 
     /**
      * Le faux serveur répondra désormais avec ce statut, ces en-têtes et ce corps.
@@ -42,13 +47,59 @@ abstract class AdapterContractTestCase extends TestCase
 
     /**
      * @param list<Rule> $rules
+     * @param list<Scenario> $scenarios
      */
-    abstract protected function durandal(array $rules, int $seed, Sleeper $sleeper): ContractClient;
+    abstract protected function durandal(array $rules, int $seed, Sleeper $sleeper, array $scenarios, ClockInterface $clock): ContractClient;
 
     protected function setUp(): void
     {
         $this->sleeper = new RecordingSleeper();
+        $this->clock = new FrozenClock();
         $this->backendResponds(200, self::BODY, ['Content-Type' => 'application/json', 'Content-Length' => (string) \strlen(self::BODY)]);
+    }
+
+    public function testScenariosPlayBeforeRules(): void
+    {
+        $client = $this->client([new Rule(new Latency(100))], scenarios: [Scenario::failTimes(2, status: 502)->thenSucceed()]);
+
+        self::assertSame([502, 502, 200], [$client->send('GET', self::URL)->status, $client->send('GET', self::URL)->status, $client->send('GET', self::URL)->status]);
+        self::assertSame([100, 100, 100], $this->sleeper->sleeps);
+        self::assertSame(1, $this->backendCalls());
+    }
+
+    public function testDurationsAreMeasuredWithTheClientClock(): void
+    {
+        $client = $this->client([], scenarios: [Scenario::offlineFor(5)]);
+
+        $offline = $client->send('GET', self::URL);
+        $this->clock->advance(4_999);
+        $stillOffline = $client->send('GET', self::URL);
+        $this->clock->advance(1);
+
+        self::assertSame(ContractResult::CONNECTION_REFUSED, $offline->error);
+        self::assertSame(ContractResult::CONNECTION_REFUSED, $stillOffline->error);
+        self::assertSame(200, $client->send('GET', self::URL)->status);
+    }
+
+    public function testTheJournalRecordsEveryRequestWithItsFate(): void
+    {
+        $client = $this->client([new Rule(new HttpError(503, retryAfterSeconds: 2), RequestMatcher::any()->method('POST')), new Rule(new Latency(300))]);
+
+        $client->send('POST', self::URL, ['Idempotency-Key' => 'k-1']);
+        $this->clock->advance(2_000);
+        $client->send('GET', self::URL . '?page=2');
+
+        $entries = $client->journal()->entries();
+        self::assertSame(self::SEED, $client->journal()->seed);
+        self::assertCount(2, $entries);
+        self::assertSame('POST ' . self::URL, $entries[0]->target());
+        self::assertSame(['k-1'], $entries[0]->request->header('Idempotency-Key'));
+        self::assertSame(2, $entries[0]->retryAfterSeconds());
+        self::assertSame(300, $entries[0]->latencyMilliseconds);
+        self::assertSame('10:00:00', $entries[0]->at->format('H:i:s'));
+        self::assertSame('GET ' . self::URL . '?page=2', $entries[1]->target());
+        self::assertNull($entries[1]->fault);
+        self::assertSame('10:00:02', $entries[1]->at->format('H:i:s'));
     }
 
     public function testWithoutRulesTheRequestPassesThrough(): void
@@ -179,10 +230,11 @@ abstract class AdapterContractTestCase extends TestCase
 
     /**
      * @param list<Rule> $rules
+     * @param list<Scenario> $scenarios
      */
-    private function client(array $rules, int $seed = self::SEED): ContractClient
+    private function client(array $rules, int $seed = self::SEED, array $scenarios = []): ContractClient
     {
-        return $this->durandal($rules, $seed, $this->sleeper);
+        return $this->durandal($rules, $seed, $this->sleeper, $scenarios, $this->clock);
     }
 
     /**
