@@ -9,7 +9,7 @@ Bibliothèque PHP de **tests de résilience** : elle simule des pannes réseau (
 - Cœur indépendant du framework (PSR-18, PSR-20), intégration Symfony, PHPUnit et Pest
 - Tests déterministes (graine fixe) et rapides (horloge virtuelle, aucune vraie attente)
 
-> 🚧 En développement (phase 3 : journal, scénarios et assertions) — voir le [plan](docs/PLAN.md).
+> 🚧 v0.1 : pannes, adaptateurs PSR-18 et Symfony, journal, scénarios et assertions. Prochaine étape : horloge virtuelle (phase 4) — voir le [plan](docs/PLAN.md).
 
 ## Utilisation (PSR-18)
 

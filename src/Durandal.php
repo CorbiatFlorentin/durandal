@@ -18,7 +18,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 final class Durandal
 {
-    public const VERSION = '0.1.0-dev';
+    public const VERSION = '0.1.0';
 
     public static function version(): string
     {
